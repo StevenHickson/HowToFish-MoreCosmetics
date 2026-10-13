@@ -63,7 +63,7 @@ def nearest_cell(hexcol):
 
 # ------------------------------------------------------------------ mesh building
 
-PARTS = [None, "torso", "arm", "leg", "shoe", "skirt"]
+PARTS = [None, "torso", "arm", "leg", "shoe", "skirt", "robe"]
 
 class Builder:
     """Collects faces tagged with colour keys. `preview` maps c1/c2/c3 to hex colours for renders
@@ -548,6 +548,10 @@ def outfit_weights(co, part):
         return _blend(sb["foot"], sb["ll"], z, 0.10, 0.02)
     if part == "shoe":
         return [(sb["foot"], 1.0)]
+    if part == "robe":
+        # long split skirts: each half follows its own thigh more and more toward the hem
+        w = min(0.8, max(0.0, (0.56 - z) / 0.3)) * min(1.0, abs(x) / 0.04)
+        return [(0, 1 - w), (sb["lu"], w)] if w > 1e-3 else [(0, 1.0)]
     if part == "skirt":
         # coat tails follow the hips mostly, with a share of the thigh so legs don't burst through
         w = 0.4 * min(1.0, abs(x) / 0.05) * min(1.0, max(0.0, (0.62 - z) / 0.3))
@@ -737,12 +741,234 @@ def captains_uniform():
         shoe(b, side, "#141414", size=1.04)
     return b.finish()
 
+# ---- shared pieces for the next outfits
+
+def skirt(b, RT, zs, rows, key_fn, segments, part="robe", thick=0.005):
+    """A skirt/coat-tail shell hanging from the torso. rows = [(z, flare)...] top to bottom;
+    segments = [(a_start, a_end)...] in radians (gaps between them are open slits);
+    key_fn(row, a, hem) -> colour key."""
+    b.part = part
+    for a0, a1 in segments:
+        n = max(2, int(round((a1 - a0) / (2 * math.pi) * 22)))
+        rows_o, rows_i = [], []
+        for z, flare in rows:
+            ro, ri = [], []
+            for j in range(n + 1):
+                a = a0 + (a1 - a0) * j / n
+                p = torso_point(RT, zs, max(z, 0.42), a, flare) + Vector((0, 0, z - max(z, 0.42)))
+                out = Vector((p.x, p.y - TORSO_CY, 0)).normalized()
+                ro.append(b.v(p)); ri.append(b.v(p - out * thick))
+            rows_o.append(ro); rows_i.append(ri)
+        last = len(rows) - 2
+        for i in range(len(rows) - 1):
+            for j in range(n):
+                am = a0 + (a1 - a0) * (j + 0.5) / n
+                k = key_fn(i, am, i == last)
+                b.face([rows_o[i][j], rows_o[i][j + 1], rows_o[i + 1][j + 1], rows_o[i + 1][j]], k)
+                b.face([rows_i[i][j + 1], rows_i[i][j], rows_i[i + 1][j], rows_i[i + 1][j + 1]], k)
+        for j in range(n):
+            am = a0 + (a1 - a0) * (j + 0.5) / n
+            b.face([rows_o[-1][j], rows_o[-1][j + 1], rows_i[-1][j + 1], rows_i[-1][j]], key_fn(last, am, True))
+        for i in range(len(rows) - 1):
+            for j in (0, n):
+                q = [rows_o[i][j], rows_o[i + 1][j], rows_i[i + 1][j], rows_i[i][j]]
+                b.face(q if j else q[::-1], key_fn(i, a0 if j == 0 else a1, i == last))
+    b.part = None
+
+def front_dist(a):
+    return min(abs(a), abs(2 * math.pi - a))
+
+def surface_strap(b, RT, zs, pts_za, r, key, part="torso"):
+    """A strap lying on the torso, given as (z, angle) points."""
+    b.part = part
+    tube(b, [torso_point(RT, zs, z, a % (2 * math.pi), 0.003) for z, a in pts_za], [r] * len(pts_za), key, n=4)
+    b.part = None
+
+SPLIT = [(0.03, math.pi - 0.03), (math.pi + 0.03, 2 * math.pi - 0.03)]   # slit front and back
+
+def wizard_robe():
+    b = Builder("WizardRobe", "outfit", "Wizard Robe", {"c1": "#3a2a9a", "c2": "#ffcd00", "c3": "#ffcd00"})
+    def torso_key(z, a):
+        if 0.60 < z < 0.635: return "c2"                                   # rope belt
+        if front_dist(a) < math.radians(9) and z < 0.95: return "c2"      # trim down the front
+        return "c1"
+    RT, zs = body_shell(b, torso_key, lambda s, a, sd: "c2" if s > 0.50 else "c1", lambda z, a, sd: "#2a2030",
+                        off=0.009, arm_extra=lambda s, a: 0.03 * max(0.0, (s - 0.30) / 0.25))   # bell sleeves
+    skirt(b, RT, zs, [(0.62, 0.008), (0.45, 0.025), (0.28, 0.045), (0.12, 0.06), (0.03, 0.07)],
+          lambda i, a, hem: "c2" if hem else "c1", SPLIT)
+    b.part = "torso"
+    for z, a, r in [(0.92, 0.6, 0.012), (0.80, -0.9, 0.010), (0.72, 2.4, 0.011), (0.98, -2.2, 0.009), (0.85, 3.0, 0.010)]:
+        b.add_bm(p_ico(r, scale=(1, 0.35, 1)), "c3", Matrix.Translation(torso_point(RT, zs, z, a % (2 * math.pi), 0.002)) @ Matrix.Rotation(-a, 4, 'Z'))
+    lathe(b, [(0.08, 1.05), (0.098, 1.11), (0.09, 1.11), (0.072, 1.05)], "c1", n=16, cy=TORSO_CY, sy=0.95, closed=True)
+    for side in (1, -1):
+        shoe(b, side, "#2a2030", size=1.0, height=0.9)
+    return b.finish()
+
+def tuxedo():
+    b = Builder("Tuxedo", "outfit", "Tuxedo", {"c1": "#151515", "c2": "#f4f4f4", "c3": "#b01010"})
+    def torso_key(z, a):
+        fd = front_dist(a)
+        if 0.56 < z < 0.63 and fd < math.radians(70): return "c3"         # cummerbund
+        if z > 0.63 and fd < math.radians(10 + (z - 0.63) * 60): return "c2"   # shirt front widening into the V
+        return "c1"
+    RT, zs = body_shell(b, torso_key, lambda s, a, sd: "c2" if s > 0.535 else "c1", lambda z, a, sd: "c1", off=0.007)
+    # tails at the back
+    skirt(b, RT, zs, [(0.58, 0.006), (0.45, 0.016), (0.33, 0.024)], lambda i, a, hem: "c1",
+          [(math.radians(125), math.radians(178)), (math.radians(182), math.radians(235))], part="skirt")
+    b.part = "torso"
+    for z in (0.70, 0.78, 0.86):                                            # shirt studs
+        b.add_bm(p_ico(0.005), "#151515", Matrix.Translation(torso_point(RT, zs, z, 0.0, 0.002)))
+    knot = torso_point(RT, zs, 1.06, 0.0, 0.012)
+    b.add_bm(p_ico(0.009), "c3", Matrix.Translation(knot))
+    for side in (1, -1):                                                    # bow tie wings
+        b.add_bm(p_cyl(0.004, 0.018, 0.035, seg=6), "c3", Matrix.Translation(knot + Vector((side * 0.02, 0.002, 0))) @ Matrix.Rotation(side * math.pi / 2, 4, 'Y'))
+    lathe(b, [(0.074, 1.06), (0.08, 1.115), (0.073, 1.115), (0.067, 1.06)], "c2", n=16, cy=TORSO_CY, sy=0.95, closed=True)   # collar
+    for side in (1, -1):
+        shoe(b, side, "#0a0a0a", size=1.02, height=0.85)
+    return b.finish()
+
+def angler_waders():
+    b = Builder("AnglerWaders", "outfit", "Angler's Waders", {"c1": "#4f5f34", "c2": "#2a2a2a", "c3": "#c03030"})
+    def torso_key(z, a):
+        return "c1" if z < 0.86 else "c3"                                   # waders up to the chest, shirt above
+    def arm_key(s, a, side):
+        if s > 0.40: return "skin"                                          # rolled-up sleeves
+        return "c3"
+    RT, zs = body_shell(b, torso_key, arm_key, lambda z, a, sd: "c1", off=0.009,
+                        arm_extra=lambda s, a: 0.008 if 0.36 < s < 0.40 else 0.0,
+                        leg_extra=lambda z, a: 0.006, torso_extra=lambda z, a: 0.004 if z < 0.86 else 0.0)
+    for side in (1, -1):                                                    # suspenders over the shoulders
+        surface_strap(b, RT, zs, [(0.84, side * 0.45), (0.95, side * 0.42), (1.06, side * 0.6), (1.10, side * 1.5),
+                                  (1.06, side * 2.6), (0.95, side * 2.75), (0.84, side * 2.75)], 0.006, "c2")
+    b.part = "torso"
+    b.add_bm(p_box(0.07, 0.014, 0.06), "c1", Matrix.Translation(torso_point(RT, zs, 0.79, 0.0, 0.008)))   # chest pocket
+    b.add_bm(p_ico(0.008, scale=(0.6, 0.6, 1.4)), "#ffcd00", Matrix.Translation(torso_point(RT, zs, 0.83, 0.25, 0.02)))  # lure
+    for side in (1, -1):
+        shoe(b, side, "c1", size=1.1, height=1.05)
+        b.part = "shoe"
+        b.add_bm(p_box(0.1, 0.24, 0.012), "#1a1a1a", Matrix.Translation((side * LEG_X, -0.065, 0.006)))   # sole
+    return b.finish()
+
+def hawaiian_shirt():
+    b = Builder("HawaiianShirt", "outfit", "Hawaiian Shirt", {"c1": "#1aa3c8", "c2": "#ff5fa0", "c3": "#2ea84a"})
+    def pattern(t, a):
+        h = int(abs(math.sin(t * 91.7 + a * 37.3)) * 1000) % 9
+        return "c2" if h == 0 else ("c3" if h in (1, 2) else "c1")
+    def torso_key(z, a):
+        if z < 0.55: return "#c8b48a"                                       # shorts
+        if z > 0.98 and front_dist(a) < math.radians(28): return "skin"   # open collar
+        return pattern(z, a)
+    def arm_key(s, a, side):
+        return pattern(s, a) if s < 0.29 else "skin"                       # short sleeves
+    def leg_key(z, a, side):
+        return "#c8b48a" if z > 0.29 else "skin"                           # shorts to the knee, bare legs
+    RT, zs = body_shell(b, torso_key, arm_key, leg_key, off=0.008,
+                        arm_extra=lambda s, a: 0.006 if s < 0.29 else -0.004,
+                        leg_extra=lambda z, a: 0.006 if z > 0.29 else -0.004)
+    for side in (1, -1):                                                    # flip-flops: skin feet on thin soles
+        shoe(b, side, "skin", size=0.9, height=0.7)
+        b.part = "shoe"
+        b.add_bm(p_box(0.1, 0.25, 0.01), "#f2c200", Matrix.Translation((side * LEG_X, -0.065, 0.005)))
+        b.add_bm(p_box(0.012, 0.06, 0.008), "#f2c200", Matrix.Translation((side * LEG_X, -0.12, 0.035)) @ Matrix.Rotation(0.5, 4, 'X'))
+    return b.finish()
+
+def viking_furs():
+    b = Builder("VikingFurs", "outfit", "Viking Furs", {"c1": "#7a3a1a", "c2": "#9a9286", "c3": "#4a2a14"})
+    def torso_key(z, a):
+        return "c3" if 0.60 < z < 0.65 else "c1"                            # leather belt
+    def arm_key(s, a, side):
+        return "c3" if s > 0.42 else "c1"                                   # leather bracers
+    def leg_key(z, a, side):
+        return "c2" if z < 0.22 else "#3a3a3a"                              # fur-wrapped boots, dark trousers
+    RT, zs = body_shell(b, torso_key, arm_key, leg_key, off=0.008,
+                        arm_extra=lambda s, a: 0.007 if s > 0.42 else 0.0,
+                        leg_extra=lambda z, a: 0.014 if z < 0.22 else 0.0)
+    skirt(b, RT, zs, [(0.62, 0.006), (0.48, 0.02), (0.36, 0.03)], lambda i, a, hem: "c1", SPLIT)
+    b.part = "torso"
+    b.add_bm(p_box(0.045, 0.012, 0.04), "#c0c4c8", Matrix.Translation(torso_point(RT, zs, 0.625, 0.0, 0.005)))   # buckle
+    import random; rnd = random.Random(7)
+    for k in range(26):                                                     # fur mantle round the neck
+        a = 2 * math.pi * k / 26
+        b.add_bm(p_ico(rnd.uniform(0.022, 0.03), sub=1), "c2",
+                 Matrix.Translation(torso_point(RT, zs, 1.05 + rnd.uniform(-0.01, 0.02), a, 0.008)))
+    for side in (1, -1):                                                    # fur on the shoulders
+        b.part = "arm"
+        for k in range(6):
+            b.add_bm(p_ico(rnd.uniform(0.02, 0.026), sub=1), "c2",
+                     Matrix.Translation((side * (0.12 + 0.02 * k), rnd.uniform(-0.02, 0.02), ARM_Z + 0.04 + rnd.uniform(-0.005, 0.01))))
+        b.part = "leg"
+        for k in range(8):                                                  # fur tufts on the boots
+            a = 2 * math.pi * k / 8
+            b.add_bm(p_ico(0.016, sub=1), "c2", Matrix.Translation((side * LEG_X + 0.055 * math.sin(a), -0.055 * math.cos(a), 0.2)))
+        shoe(b, side, "c3", size=1.08)
+    return b.finish()
+
+def scuba_wetsuit():
+    b = Builder("ScubaWetsuit", "outfit", "Scuba Wetsuit", {"c1": "#151515", "c2": "#1aa3c8", "c3": "#ffcd00"})
+    def stripe(a):
+        return abs(math.sin(a)) > 0.93                                      # down both sides
+    RT, zs = body_shell(b, lambda z, a: "c2" if stripe(a) else "c1",
+                        lambda s, a, sd: "c2" if abs(math.sin(a)) > 0.93 else "c1",
+                        lambda z, a, sd: "c2" if abs(math.sin(a)) > 0.93 else "c1", off=0.004)
+    b.part = "torso"
+    for side in (1, -1):                                                    # twin air tanks
+        c = torso_point(RT, zs, 0.84, math.pi, 0.04) + Vector((side * 0.036, 0, 0))
+        b.add_bm(p_cyl(0.034, 0.034, 0.30, seg=12), "c3", Matrix.Translation(c))
+        b.add_bm(p_ico(0.034, sub=1, scale=(1, 1, 0.6)), "c3", Matrix.Translation(c + Vector((0, 0, 0.15))))
+    b.add_bm(p_cyl(0.008, 0.008, 0.05, seg=6), "#c0c4c8", Matrix.Translation(torso_point(RT, zs, 1.0, math.pi, 0.04)))
+    for side in (1, -1):                                                    # harness straps
+        surface_strap(b, RT, zs, [(0.70, side * 2.6), (0.85, side * 2.4), (1.0, side * 2.0), (1.08, side * 1.4),
+                                  (1.0, side * 0.6), (0.85, side * 0.45), (0.70, side * 0.45)], 0.006, "c1")
+    for side in (1, -1):                                                    # booties and flippers
+        shoe(b, side, "c1", size=1.02, height=0.9)
+        b.add_bm(p_box(0.11, 0.24, 0.01), "c2", Matrix.Translation((side * LEG_X, -0.25, 0.012)))
+    return b.finish()
+
+def fishermans_raincoat():
+    b = Builder("FishermansRaincoat", "outfit", "Fisherman's Raincoat", {"c1": "#ffd21a", "c2": "#3a2a1a", "c3": "#1a3a6a"})
+    RT, zs = body_shell(b, lambda z, a: "c1", lambda s, a, sd: "c1",
+                        lambda z, a, sd: "c3" if z < 0.24 else "#2a3a5a", off=0.011,
+                        arm_extra=lambda s, a: 0.006, leg_extra=lambda z, a: 0.012 if z < 0.24 else 0.0)
+    skirt(b, RT, zs, [(0.60, 0.012), (0.45, 0.024), (0.32, 0.034)], lambda i, a, hem: "c1",
+          [(0.08, 2 * math.pi - 0.08)], part="skirt")
+    b.part = "torso"
+    for z in (0.66, 0.76, 0.86, 0.96):                                      # toggles
+        b.add_bm(p_box(0.03, 0.01, 0.009), "c2", Matrix.Translation(torso_point(RT, zs, z, 0.0, 0.006)))
+    lathe(b, [(0.08, 1.04), (0.1, 1.13), (0.092, 1.13), (0.072, 1.04)], "c1", n=16, cy=TORSO_CY, sy=0.95, closed=True)   # tall collar
+    for side in (1, -1):
+        shoe(b, side, "c3", size=1.1, height=1.05)
+    return b.finish()
+
+def souwester():
+    b = Builder("Souwester", "hat", "Sou'wester", {"c1": "#ffd21a", "c2": "#ffd21a", "c3": "#3a2a1a"})
+    lathe(b, dome_profile(0.103, 1.295, 1.41, t=0.005), "c1", n=24, closed=True)
+    # brim: short at the front, long and drooping at the back to keep rain off the neck
+    n = 28; inner, outer, inner_b, outer_b = [], [], [], []
+    for k in range(n):
+        a = 2 * math.pi * k / n
+        back = (1 - math.cos(a)) / 2                                        # 0 at the front, 1 at the back
+        r_out = 0.125 + 0.05 * back
+        z_out = 1.292 - 0.045 * back
+        for lst, r, z in ((inner, 0.100, 1.296), (outer, r_out, z_out)):
+            lst.append(b.v((r * math.sin(a), HEAD_CY - r * 1.04 * math.cos(a), z)))
+    inner_b = [b.v(v.co - Vector((0, 0, 0.005))) for v in inner]
+    outer_b = [b.v(v.co - Vector((0, 0, 0.005))) for v in outer]
+    for k in range(n):
+        j = (k + 1) % n
+        b.face([inner[k], inner[j], outer[j], outer[k]], "c2")
+        b.face([inner_b[j], inner_b[k], outer_b[k], outer_b[j]], "c2")
+        b.face([outer[k], outer[j], outer_b[j], outer_b[k]], "c2")
+        b.face([inner[j], inner[k], inner_b[k], inner_b[j]], "c2")
+    return b.finish()
+
 # ORDER MATTERS: a cosmetic's position in the game's list is what gets saved and synced, so only ever
 # add new entries at the END of this list, never reorder or remove.
 COSMETICS = {f.__name__: f for f in [crown, captains_cap, pirate_bandana, fish_hat, angler_bucket_hat, top_hat,
                                       viking_helmet, propeller_beanie, wizard_hat, eyepatch, pipe, monocle,
                                       aviators, snorkel_mask, clown_nose, headphones, fish_in_mouth, head_bandage,
-                                      pirate_coat, captains_uniform]}
+                                      pirate_coat, captains_uniform,
+                                      wizard_robe, tuxedo, angler_waders, hawaiian_shirt, viking_furs, scuba_wetsuit,
+                                      fishermans_raincoat, souwester]}
 
 # ------------------------------------------------------------------ export
 

@@ -2,11 +2,11 @@
 
 New hats, accessories and outfits for **How to Fish**, all in the character customizer and fully colorable with the game's three color slots.
 
-**Hats:** Crown, Captain's Cap, Pirate Bandana, Fish Hat, Angler's Bucket Hat, Top Hat, Viking Helmet, Propeller Beanie, Wizard Hat
+**Hats:** Crown, Captain's Cap, Pirate Bandana, Fish Hat, Angler's Bucket Hat, Top Hat, Viking Helmet, Propeller Beanie, Wizard Hat, Sou'wester
 
 **Accessories:** Eyepatch, Pipe, Monocle, Aviator Sunglasses, Snorkel Mask, Clown Nose, Headphones, Fish In Mouth, Head Bandage
 
-**Outfits:** Pirate Coat, Captain's Uniform
+**Outfits:** Pirate Coat, Captain's Uniform, Wizard Robe, Tuxedo, Angler's Waders, Hawaiian Shirt, Viking Furs, Scuba Wetsuit, Fisherman's Raincoat
 
 New items appear at the end of each list in character customization.
 
