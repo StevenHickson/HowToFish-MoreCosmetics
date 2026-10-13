@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace MoreCosmetics
 {
-    [BepInPlugin(Guid, "More Cosmetics", "0.2.0")]
+    [BepInPlugin(Guid, "More Cosmetics", "0.2.1")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "justresearch.morecosmetics";
