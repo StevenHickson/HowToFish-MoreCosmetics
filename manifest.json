@@ -1,0 +1,7 @@
+{
+  "name": "MoreCosmetics",
+  "version_number": "0.1.0",
+  "website_url": "https://github.com/StevenHickson/HowToFish-MoreCosmetics",
+  "description": "9 new hats, 9 accessories and 2 outfits for your character, all colorable in the character customizer.",
+  "dependencies": ["BepInEx-BepInExPack-5.4.2305"]
+}

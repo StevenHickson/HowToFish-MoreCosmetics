@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>MoreCosmetics</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- Where the game and your r2modman profile live -->
+    <GameDir>C:\Program Files (x86)\Steam\steamapps\common\How to Fish\How to Fish</GameDir>
+    <Managed>$(GameDir)\How to Fish_Data\Managed</Managed>
+    <ProfileDir>$(APPDATA)\r2modmanPlus-local\HowToFish\profiles\Default</ProfileDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Lets us read the game's private fields directly -->
+    <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.2" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="$(ProfileDir)\BepInEx\core\BepInEx.dll" Private="false" />
+    <Reference Include="$(ProfileDir)\BepInEx\core\0Harmony.dll" Private="false" />
+    <Reference Include="$(Managed)\Assembly-CSharp.dll" Private="false" Publicize="true" />
+    <Reference Include="$(Managed)\FishNet.Runtime.dll" Private="false" />
+    <Reference Include="$(Managed)\UnityEngine.dll" Private="false" />
+    <Reference Include="$(Managed)\UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="$(Managed)\UnityEngine.PhysicsModule.dll" Private="false" />
+    <Reference Include="$(Managed)\Unity.Localization.dll" Private="false" />
+    <Reference Include="$(Managed)\UnityEngine.JSONSerializeModule.dll" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The dumper is a separate dev tool with its own project -->
+    <Compile Remove="tools\**" />
+    <!-- Cosmetics exported by blender/cosmetics.py, baked into the DLL -->
+    <EmbeddedResource Include="Assets\*.json" LogicalName="Cosmetics.%(Filename).json" />
+  </ItemGroup>
+
+  <!-- After building, copy the DLL straight into the r2modman profile so you can just launch the game -->
+  <Target Name="CopyToProfile" AfterTargets="Build">
+    <MakeDir Directories="$(ProfileDir)\BepInEx\plugins\MoreCosmetics" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ProfileDir)\BepInEx\plugins\MoreCosmetics" />
+  </Target>
+
+  <!-- Also build a Thunderstore / r2modman "Import local mod" zip in dist/ -->
+  <Target Name="PackageZip" AfterTargets="CopyToProfile" Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <PackDir>$(IntermediateOutputPath)package</PackDir>
+    </PropertyGroup>
+    <RemoveDir Directories="$(PackDir)" />
+    <Copy SourceFiles="$(TargetPath);manifest.json;icon.png;README.md" DestinationFolder="$(PackDir)" />
+    <MakeDir Directories="dist" />
+    <ZipDirectory SourceDirectory="$(PackDir)" DestinationFile="dist\MoreCosmetics.zip" Overwrite="true" />
+  </Target>
+
+</Project>

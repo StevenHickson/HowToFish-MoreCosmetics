@@ -1,0 +1,13 @@
+bin/
+obj/
+dist/
+.vs/
+.idea/
+*.user
+
+# Files exported from the game by tools/OutfitDumper are the game's assets: keep them local
+blender/refs/
+# Preview renders and the .blend include the game's head model
+Assets/previews/
+Assets/*.blend
+Assets/*.blend1
